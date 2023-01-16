@@ -1,131 +1,97 @@
-import {  getGallery} from "./js/galleryAPI";
-import { Notify } from 'notiflix/build/notiflix-notify-aio';
-import SimpleLightbox from "simplelightbox";
-import "simplelightbox/dist/simple-lightbox.min.css";
-import InfiniteScroll from 'infinite-scroll';
+import { PixabayAPIMain } from './pixabayApi';
+import Notiflix from 'notiflix';
+import SimpleLightbox from 'simplelightbox';
+import 'simplelightbox/dist/simple-lightbox.min.css';
 
 const refs = {
-    formEl: document.querySelector('#search-form'),
-  listEl: document.querySelector('.gallery'),
-  loadMoreBtn: document.querySelector(".load-more"),
-}
-refs.formEl.addEventListener('submit', onSearch);
-refs.loadMoreBtn.addEventListener('click', onMoreLoadPage);
+  searchForm: document.querySelector('#search-form'),
+  inputSearchForm: document.querySelector('.search-form_input'),
+  buttonSearchForm: document.querySelector('.search-form_button'),
+  galleryCards: document.querySelector('.gallery'),
+  buttonLoad: document.querySelector('.load-more'),
+};
 
-let value = "";
-let currentPage = 1;
-let currentPer_page = 40;
+const pixabayApi = new PixabayAPIMain();
+refs.buttonLoad.style.visibility = 'hidden';
 
-function onSearch(e) {
+refs.searchForm.addEventListener('submit', async e => {
   e.preventDefault();
-  value = e.target.elements.searchQuery.value;
-   
- // console.log(value); 
-
-  refs.loadMoreBtn.style.visibility = "visible";
-  currentPage = 1;
+  refs.buttonLoad.style.visibility = 'hidden';
+  const inputValue = e.target.elements.searchQuery.value;
   e.target.reset();
-  clearContainer();
-  getCard(value);
 
-}
-  
+  refs.galleryCards.innerHTML = '';
+  // pixabayApi.currentPage = 1;
 
-async function getCard(value) {
-  try {
-     // getGallery(value).then(data => console.log(data.data.hits));
-        const res = await getGallery(value, currentPage)
-          
-          if (res.data.hits.length > 0 && checkSpaces(value)) {
-            renderCard(res.data.hits);
-            Notify.success(`Hooray! We found ${res.data.totalHits} images.`);
-            return res;
-          } else {
-            throw new Error('404');
-          }
-        
-    } catch (error) {
-     Notify.failure("Sorry, there are no images matching your search query. Please try again.")
-     console.log(error);
-  }
-  return {}
-}
-//document.addEventListener('scroll', infScroll)
+  if (inputValue.length && inputValue.trim() !== '') {
+    const { data } = await pixabayApi.getPixabayApi(inputValue);
 
-// let infScroll = new InfiniteScroll('.gallery', {
-//   path: function() {
-//     return 'https://api.unsplash.com/photos?client_id=...&page=' + this.pageIndex;
-//   },
-//   responseBody: 'json',
-//   history: false,
-// })
-
-
-function onMoreLoadPage() {
-  currentPage += 1;
-  getCard(value).then((res) => {
-    //console.log(res);
-    let total_pages = res.data.totalHits / currentPer_page;
-   
-  
-    if (currentPage >= total_pages) {
-      refs.loadMoreBtn.style.visibility = "hidden";
-      Notify.failure("We're sorry, but you've reached the end of search results.");
+    if (data.hits.length) {
+      createGalleryCardsMarkup(data.hits);
+      if (data.totalHits <= pixabayApi.currentPage * pixabayApi.perPage) {
+        refs.buttonLoad.style.visibility = 'hidden';
+        Notiflix.Notify.info(
+          "We're sorry, but you've reached the end of search results."
+        );
+        return;
+      }
+      Notiflix.Notify.success(`Hooray! We found ${data.totalHits} images.`);
+      refs.buttonLoad.style.visibility = 'visible';
+      return;
     }
-  })
-}
-
-window.addEventListener('scroll', () => {
-  if (window.innerHeight + window.pageYOffset >= document.body.offsetHeight) {
-    // alert('At the bottom!');
-    onMoreLoadPage();
+    Notiflix.Notify.failure(
+      'Sorry, there are no images matching your search query. Please try again.'
+    );
   }
 });
 
-function renderCard(hits) {
-    const markup = hits.map((({ webformatURL, largeImageURL, tags, likes, views, comments, downloads }) => {
-      return `<div class="photo-card">
-       <a class="gallery__item" href="${largeImageURL}">
-  <img src="${webformatURL}" data-src="${largeImageURL}" alt="${tags}" loading="lazy" />
-  </a>
-  <div class="info">
-    <p class="info-item">
-      <b>Likes:</b> ${likes}
-    </p>
-    <p class="info-item">
-      <b>Views:</b> ${views}
-    </p>
-    <p class="info-item">
-      <b>Comments:</b> ${comments}
-    </p>
-    <p class="info-item">
-      <b>Downloads:</b> ${downloads}
-    </p>
-  </div>
-  </div>`
-            
-    })).join('');
-  
-  refs.listEl.insertAdjacentHTML('beforeend', markup);
-  
-  let gallery = new SimpleLightbox('.gallery a');
-  gallery.refresh(); 
-  onScrollDocument();
-}
-function clearContainer() {
-    refs.listEl.innerHTML = ''; 
-    
-}
-function checkSpaces(string) {
-  return string.trim() !== '';
-}
-function onScrollDocument(e) {
-  const { height: cardHeight } = document
-  .querySelector(".gallery")
-  .firstElementChild.getBoundingClientRect();
+refs.buttonLoad.addEventListener('click', async e => {
+  console.log(e.target);
 
-  window.scrollBy({
-  top: cardHeight * 2,
-  behavior: "smooth",
-  }); 
+  const { data } = await pixabayApi.getPixabayApi();
+  createGalleryCardsMarkup(data.hits);
+  if (data.totalHits <= pixabayApi.currentPage * pixabayApi.perPage) {
+    refs.buttonLoad.style.visibility = 'hidden';
+    Notiflix.Notify.info(
+      "We're sorry, but you've reached the end of search results."
+    );
+    return;
+  }
+});
+
+const simpleLightBox = new SimpleLightbox('.gallery a', {
+  captionsData: 'alt',
+  captionDelay: 250,
+});
+
+function createGalleryCardsMarkup(photos) {
+  const markup = photos
+    .map(elem => {
+      return `<div class="photo-card">
+          <a href="${elem.largeImageURL}">
+          <img class ="photo-card_image" src="${elem.webformatURL}" alt="${elem.tags}" width ="350px" height ="230px" loading="lazy" /> 
+          </a>
+          <div class="info">
+            <p class="info-item">
+              <b>Likes</b><br>
+              ${elem.likes}
+            </p>
+            <p class="info-item">
+              <b>Views</b><br>
+              ${elem.views}
+            </p>
+            <p class="info-item">
+              <b>Comments</b><br>
+              ${elem.comments}
+            </p>
+            <p class="info-item">
+              <b>Downloads</b><br>
+              ${elem.downloads}
+            </p>
+          </div>
+        </div>`;
+    })
+    .join('');
+  refs.galleryCards.insertAdjacentHTML('beforeend', markup);
+  simpleLightBox.refresh();
 }
